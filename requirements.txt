@@ -1,0 +1,9 @@
+ultralytics
+opencv-python
+flask
+flask-socketio
+numpy
+pandas
+pillow
+python-dotenv
+eventlet

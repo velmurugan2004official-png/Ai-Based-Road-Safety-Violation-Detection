@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Road Safety Violation Detection System</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg-primary: #0a0e1a;
+            --bg-secondary: #0f1628;
+            --bg-card: #141d35;
+            --bg-card2: #1a2540;
+            --blue-accent: #1e90ff;
+            --blue-light: #4db8ff;
+            --blue-dark: #0066cc;
+            --red-alert: #ff3b3b;
+            --green-ok: #00e676;
+            --yellow: #ffd600;
+            --text-primary: #e8f0fe;
+            --text-secondary: #8899bb;
+            --border: #1e3060;
+        }
+        body { font-family: 'Segoe UI', Arial, sans-serif; background: var(--bg-primary); color: var(--text-primary); height: 100vh; overflow: hidden; }
+
+        /* HEADER */
+        .header { background: linear-gradient(90deg, #0a0e1a 0%, #0f1e3d 50%, #0a0e1a 100%); border-bottom: 2px solid var(--blue-accent); padding: 0 24px; height: 56px; display: flex; align-items: center; justify-content: space-between; }
+        .header-left { display: flex; align-items: center; gap: 12px; }
+        .header h1 { font-size: 18px; font-weight: 700; color: var(--text-primary); }
+        .header h1 span { color: var(--blue-accent); }
+        .header-right { display: flex; align-items: center; gap: 12px; }
+        .status-badge { display: flex; align-items: center; gap: 6px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 20px; padding: 5px 14px; font-size: 12px; font-weight: 600; }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #444; }
+        .status-dot.active { background: var(--green-ok); box-shadow: 0 0 8px var(--green-ok); animation: pulse 1.5s infinite; }
+        .status-dot.processing { background: var(--yellow); box-shadow: 0 0 8px var(--yellow); animation: pulse 0.8s infinite; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+        .clock { font-size: 13px; color: var(--text-secondary); font-family: monospace; }
+        .history-btn { display:flex; align-items:center; gap:5px; padding:6px 12px; background:#1a3a6b; color:var(--blue-light); border:1px solid var(--blue-accent); border-radius:8px; font-size:11px; font-weight:600; cursor:pointer; text-decoration:none; }
+        .history-btn:hover { background:var(--blue-accent); color:#fff; }
+
+        /* LAYOUT */
+        .layout { display: grid; grid-template-columns: 1fr 380px; height: calc(100vh - 56px); }
+
+        /* LEFT */
+        .left-panel { display: flex; flex-direction: column; padding: 16px; gap: 12px; border-right: 1px solid var(--border); }
+        .video-wrapper { flex: 1; background: #000; border-radius: 12px; border: 1px solid var(--border); overflow: hidden; position: relative; min-height: 0; }
+        .video-overlay { position: absolute; top:0; left:0; width:100%; height:100%; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:10px; color:var(--text-secondary); font-size:15px; z-index:2; background:#000; }
+        .video-overlay .icon { font-size: 40px; }
+        .video-wrapper img, .video-wrapper video { width:100%; height:100%; object-fit:contain; display:none; }
+        .progress-wrap { height: 4px; background: var(--bg-card); border-radius: 2px; overflow: hidden; }
+        .progress-bar { height:100%; width:0%; background: linear-gradient(90deg, var(--blue-dark), var(--blue-accent)); border-radius:2px; transition: width 0.5s ease; }
+        .controls { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+        .btn { display:flex; align-items:center; gap:6px; padding:9px 18px; border:none; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; transition:all 0.2s; }
+        .btn:hover { transform:translateY(-1px); filter:brightness(1.1); }
+        .btn-primary { background: var(--blue-accent); color:#fff; }
+        .btn-run { background: linear-gradient(135deg, #0066cc, #1e90ff); color:#fff; }
+        .btn-stop { background: #3d0f0f; color:var(--red-alert); border:1px solid var(--red-alert); }
+        .btn-clear { background: var(--bg-card2); color:var(--text-secondary); }
+        input[type="file"] { display:none; }
+        .upload-label { display:flex; align-items:center; gap:6px; padding:9px 18px; background:#1a3a6b; color:var(--blue-light); border:1px solid var(--blue-accent); border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; transition:all 0.2s; }
+        .upload-label:hover { transform:translateY(-1px); filter:brightness(1.1); }
+
+        /* RIGHT */
+        .right-panel { display:flex; flex-direction:column; overflow-y:auto; background:var(--bg-secondary); }
+        .right-panel::-webkit-scrollbar { width:4px; }
+        .right-panel::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+        .section { padding:16px; border-bottom:1px solid var(--border); }
+        .section-title { font-size:11px; font-weight:700; color:var(--text-secondary); text-transform:uppercase; letter-spacing:1.5px; margin-bottom:12px; display:flex; align-items:center; gap:6px; }
+        .section-title::after { content:''; flex:1; height:1px; background:var(--border); }
+
+        /* TOTAL BAR */
+        .total-bar { background: linear-gradient(135deg, #0f1e3d, #1a2e5a); border:1px solid var(--blue-accent); border-radius:10px; padding:12px 16px; display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+        .total-label { font-size:12px; color:var(--text-secondary); font-weight:600; }
+        .total-num { font-size:32px; font-weight:800; color:var(--blue-accent); }
+
+        /* VIOLATION CARDS - now clickable */
+        .violation-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+        .v-card {
+            background:var(--bg-card); border:1px solid var(--border);
+            border-radius:10px; padding:12px;
+            display:flex; flex-direction:column; gap:6px;
+            position:relative; overflow:hidden;
+            cursor:pointer;
+            transition: all 0.2s;
+        }
+        .v-card:hover { border-color:var(--blue-accent); transform:translateY(-2px); box-shadow:0 4px 20px rgba(30,144,255,0.2); }
+        .v-card::before { content:''; position:absolute; top:0; left:0; width:3px; height:100%; background:var(--blue-accent); border-radius:10px 0 0 10px; }
+        .v-card.alert::before { background:var(--red-alert); }
+        .v-card.alert { border-color:rgba(255,59,59,0.3); }
+        .v-card.alert:hover { border-color:var(--red-alert); box-shadow:0 4px 20px rgba(255,59,59,0.2); }
+        .v-card-icon { font-size:22px; }
+        .v-card-label { font-size:10px; color:var(--text-secondary); font-weight:600; text-transform:uppercase; letter-spacing:0.5px; }
+        .v-card-count { font-size:28px; font-weight:800; color:var(--blue-light); line-height:1; }
+        .v-card.alert .v-card-count { color:var(--red-alert); }
+        .v-card-trend { font-size:10px; color:var(--text-secondary); }
+        .v-card-hint { font-size:9px; color:var(--blue-accent); margin-top:2px; opacity:0.7; }
+
+        /* LOG */
+        .log-list { display:flex; flex-direction:column; gap:6px; max-height:200px; overflow-y:auto; }
+        .log-list::-webkit-scrollbar { width:3px; }
+        .log-list::-webkit-scrollbar-thumb { background:var(--border); }
+        .log-item { background:var(--bg-card); border-radius:8px; padding:8px 10px; display:flex; align-items:center; gap:10px; border-left:3px solid var(--red-alert); animation:slideIn 0.3s ease; }
+        @keyframes slideIn { from{opacity:0;transform:translateX(10px)} to{opacity:1;transform:translateX(0)} }
+        .log-icon { font-size:18px; flex-shrink:0; }
+        .log-info { flex:1; }
+        .log-type { font-size:12px; font-weight:700; color:var(--text-primary); text-transform:uppercase; }
+        .log-meta { font-size:10px; color:var(--text-secondary); margin-top:2px; display:flex; gap:8px; }
+        .conf-badge { background:rgba(30,144,255,0.15); color:var(--blue-light); padding:1px 6px; border-radius:4px; font-size:10px; font-weight:600; }
+
+        /* SNAPSHOTS */
+        .snap-tabs { display:flex; gap:4px; margin-bottom:10px; flex-wrap:wrap; }
+        .snap-tab { padding:4px 10px; border:1px solid var(--border); background:var(--bg-card); color:var(--text-secondary); border-radius:6px; font-size:10px; font-weight:600; cursor:pointer; transition:all 0.2s; }
+        .snap-tab:hover { border-color:var(--blue-accent); color:var(--blue-light); }
+        .snap-tab.active { background:var(--blue-accent); color:#fff; border-color:var(--blue-accent); }
+        .snap-count { text-align:right; font-size:10px; color:var(--text-secondary); margin-top:6px; }
+        .snap-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; max-height:200px; overflow-y:auto; }
+        .snap-item { position:relative; border-radius:8px; overflow:hidden; border:1px solid var(--border); cursor:pointer; aspect-ratio:16/9; background:#000; }
+        .snap-item img { width:100%; height:100%; object-fit:cover; transition:transform 0.2s; }
+        .snap-item:hover img { transform:scale(1.05); }
+        .snap-label { position:absolute; bottom:0; left:0; right:0; background:linear-gradient(transparent,rgba(0,0,0,0.85)); padding:4px 6px; font-size:9px; color:#fff; font-weight:600; text-transform:uppercase; }
+        .snap-badge { position:absolute; top:4px; right:4px; background:var(--red-alert); color:#fff; font-size:8px; font-weight:700; padding:2px 5px; border-radius:4px; }
+        .empty { text-align:center; color:var(--text-secondary); font-size:12px; padding:16px 0; }
+        .empty-icon { font-size:28px; margin-bottom:6px; }
+
+        /* ── VIOLATION DETAIL MODAL ── */
+        .v-modal-overlay {
+            display:none; position:fixed; inset:0;
+            background:rgba(0,0,0,0.85);
+            z-index:1000;
+            align-items:center; justify-content:center;
+        }
+        .v-modal-overlay.show { display:flex; }
+        .v-modal {
+            background:var(--bg-secondary);
+            border:1px solid var(--blue-accent);
+            border-radius:16px;
+            width:90vw; max-width:800px;
+            max-height:85vh;
+            display:flex; flex-direction:column;
+            overflow:hidden;
+            animation: modalIn 0.3s ease;
+        }
+        @keyframes modalIn { from{opacity:0;transform:scale(0.95)} to{opacity:1;transform:scale(1)} }
+        .v-modal-header {
+            padding:16px 20px;
+            border-bottom:1px solid var(--border);
+            display:flex; align-items:center; justify-content:space-between;
+            background:var(--bg-card);
+        }
+        .v-modal-title { display:flex; align-items:center; gap:10px; }
+        .v-modal-icon { font-size:28px; }
+        .v-modal-name { font-size:18px; font-weight:700; color:var(--text-primary); }
+        .v-modal-sub { font-size:12px; color:var(--text-secondary); margin-top:2px; }
+        .v-modal-close { font-size:22px; cursor:pointer; color:var(--text-secondary); background:none; border:none; padding:4px 8px; border-radius:6px; }
+        .v-modal-close:hover { background:var(--bg-card2); color:#fff; }
+
+        .v-modal-stats {
+            display:grid; grid-template-columns:repeat(3,1fr);
+            gap:10px; padding:16px 20px;
+            border-bottom:1px solid var(--border);
+        }
+        .v-modal-stat { background:var(--bg-card); border-radius:8px; padding:12px; text-align:center; }
+        .v-modal-stat-num { font-size:24px; font-weight:800; color:var(--blue-accent); }
+        .v-modal-stat-label { font-size:10px; color:var(--text-secondary); margin-top:3px; text-transform:uppercase; }
+
+        .v-modal-body { display:grid; grid-template-columns:1fr 1fr; gap:0; flex:1; overflow:hidden; }
+        .v-modal-section { padding:16px; overflow-y:auto; }
+        .v-modal-section:first-child { border-right:1px solid var(--border); }
+        .v-modal-section-title { font-size:11px; font-weight:700; color:var(--text-secondary); text-transform:uppercase; letter-spacing:1px; margin-bottom:10px; }
+
+        .v-log-item { background:var(--bg-card); border-radius:6px; padding:8px 10px; margin-bottom:6px; border-left:3px solid var(--red-alert); }
+        .v-log-time { font-size:11px; color:var(--text-secondary); font-family:monospace; }
+        .v-log-conf { display:inline-flex; align-items:center; gap:4px; margin-top:3px; }
+        .v-log-bar { width:80px; height:5px; background:#1e3060; border-radius:3px; overflow:hidden; }
+        .v-log-bar-fill { height:100%; background:var(--blue-accent); border-radius:3px; }
+        .v-log-pct { font-size:10px; color:var(--blue-light); font-weight:700; }
+
+        .v-snap-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+        .v-snap-item { position:relative; border-radius:6px; overflow:hidden; border:1px solid var(--border); cursor:pointer; aspect-ratio:16/9; }
+        .v-snap-item img { width:100%; height:100%; object-fit:cover; transition:transform 0.2s; }
+        .v-snap-item:hover img { transform:scale(1.05); }
+        .v-snap-time { position:absolute; bottom:0; left:0; right:0; background:rgba(0,0,0,0.8); padding:3px 5px; font-size:9px; color:#fff; font-family:monospace; }
+
+        /* IMAGE MODAL */
+        .img-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.95); z-index:2000; align-items:center; justify-content:center; flex-direction:column; gap:12px; }
+        .img-modal.show { display:flex; }
+        .img-modal img { max-width:85vw; max-height:80vh; border-radius:10px; border:2px solid var(--blue-accent); }
+        .img-modal-close { position:absolute; top:20px; right:24px; color:#fff; font-size:28px; cursor:pointer; }
+        .img-modal-info { color:var(--text-secondary); font-size:12px; }
+    </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+    <div class="header-left">
+        <span style="font-size:24px;">🚦</span>
+        <h1>Road Safety <span>Violation Detection</span> System</h1>
+    </div>
+    <div class="header-right">
+        <a href="/history" target="_blank" class="history-btn">📋 Review Queue</a>
+        <div class="status-badge">
+            <div class="status-dot" id="statusDot"></div>
+            <span id="statusText">Idle</span>
+        </div>
+        <div class="clock" id="clock"></div>
+    </div>
+</div>
+
+<!-- LAYOUT -->
+<div class="layout">
+
+    <!-- LEFT -->
+    <div class="left-panel">
+        <div class="video-wrapper">
+            <div class="video-overlay" id="videoOverlay">
+                <div class="icon">📹</div>
+                <div>Upload a video or start camera to begin detection</div>
+            </div>
+            <img id="liveStream" src="" alt="Live">
+            <video id="videoPlayer" controls></video>
+        </div>
+        <div class="progress-wrap"><div class="progress-bar" id="progressBar"></div></div>
+        <div class="controls">
+            <button class="btn btn-primary" onclick="startCamera()">📷 Camera</button>
+            <label class="upload-label" for="videoFile">📂 Upload Video</label>
+            <input type="file" id="videoFile" accept="video/*" onchange="uploadVideo(this)">
+            <button class="btn btn-run" id="runBtn" onclick="runDetection()" disabled>▶ Run Detection</button>
+            <button class="btn btn-stop" onclick="stopFeed()">⏹ Stop</button>
+            <button class="btn btn-clear" onclick="clearAll()">🗑 Clear</button>
+        </div>
+    </div>
+
+    <!-- RIGHT -->
+    <div class="right-panel">
+
+        <!-- Total + 4 Cards -->
+        <div class="section">
+            <div class="total-bar">
+                <div>
+                    <div class="total-label">TOTAL VIOLATIONS DETECTED</div>
+                    <div style="font-size:10px;color:var(--text-secondary);margin-top:2px;">Current Session</div>
+                </div>
+                <div class="total-num" id="totalCount">0</div>
+            </div>
+
+            <div class="violation-grid">
+                <div class="v-card" id="card-helmet" onclick="openViolationModal('no_helmet')">
+                    <div class="v-card-icon">⛑️</div>
+                    <div class="v-card-label">No Helmet</div>
+                    <div class="v-card-count" id="helmetCount">0</div>
+                    <div class="v-card-trend" id="helmetTime">—</div>
+                    <div class="v-card-hint">👆 Click to view details</div>
+                </div>
+                <div class="v-card" id="card-phone" onclick="openViolationModal('phone_while_driving')">
+                    <div class="v-card-icon">📱</div>
+                    <div class="v-card-label">Phone While Driving</div>
+                    <div class="v-card-count" id="phoneCount">0</div>
+                    <div class="v-card-trend" id="phoneTime">—</div>
+                    <div class="v-card-hint">👆 Click to view details</div>
+                </div>
+                <div class="v-card" id="card-parking" onclick="openViolationModal('no_parking')">
+                    <div class="v-card-icon">🚫</div>
+                    <div class="v-card-label">No Parking</div>
+                    <div class="v-card-count" id="parkingCount">0</div>
+                    <div class="v-card-trend" id="parkingTime">—</div>
+                    <div class="v-card-hint">👆 Click to view details</div>
+                </div>
+                <div class="v-card" id="card-wrong" onclick="openViolationModal('wrong_way')">
+                    <div class="v-card-icon">⬅️</div>
+                    <div class="v-card-label">Wrong Way</div>
+                    <div class="v-card-count" id="wrongCount">0</div>
+                    <div class="v-card-trend" id="wrongTime">—</div>
+                    <div class="v-card-hint">👆 Click to view details</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Log -->
+        <div class="section">
+            <div class="section-title">🚨 Recent Violations</div>
+            <div class="log-list" id="logList">
+                <div class="empty"><div class="empty-icon">✅</div>No violations detected yet</div>
+            </div>
+        </div>
+
+        <!-- Snapshots -->
+        <div class="section">
+            <div class="section-title">📸 Violation Snapshots</div>
+            <div class="snap-tabs">
+                <button class="snap-tab active" onclick="switchTab('all',event)">All</button>
+                <button class="snap-tab" onclick="switchTab('no_helmet',event)">⛑️ Helmet</button>
+                <button class="snap-tab" onclick="switchTab('phone_while_driving',event)">📱 Phone</button>
+                <button class="snap-tab" onclick="switchTab('no_parking',event)">🚫 Parking</button>
+                <button class="snap-tab" onclick="switchTab('wrong_way',event)">⬅️ Wrong Way</button>
+            </div>
+            <div class="snap-grid" id="snapGrid">
+                <div class="empty" style="grid-column:1/-1;"><div class="empty-icon">🖼️</div>No snapshots yet</div>
+            </div>
+            <div class="snap-count" id="snapCount"></div>
+        </div>
+    </div>
+</div>
+
+<!-- VIOLATION DETAIL MODAL -->
+<div class="v-modal-overlay" id="vModalOverlay" onclick="closeViolationModal(event)">
+    <div class="v-modal" onclick="event.stopPropagation()">
+        <div class="v-modal-header">
+            <div class="v-modal-title">
+                <div class="v-modal-icon" id="vModalIcon"></div>
+                <div>
+                    <div class="v-modal-name" id="vModalName"></div>
+                    <div class="v-modal-sub" id="vModalSub"></div>
+                </div>
+            </div>
+            <button class="v-modal-close" onclick="closeViolationModal()">✕</button>
+        </div>
+
+        <!-- Stats Row -->
+        <div class="v-modal-stats">
+            <div class="v-modal-stat">
+                <div class="v-modal-stat-num" id="vModalTotal">0</div>
+                <div class="v-modal-stat-label">Total Detected</div>
+            </div>
+            <div class="v-modal-stat">
+                <div class="v-modal-stat-num" id="vModalAvgConf">—</div>
+                <div class="v-modal-stat-label">Avg Confidence</div>
+            </div>
+            <div class="v-modal-stat">
+                <div class="v-modal-stat-num" id="vModalSnapCount">0</div>
+                <div class="v-modal-stat-label">Snapshots Saved</div>
+            </div>
+        </div>
+
+        <!-- Body: Log + Snapshots -->
+        <div class="v-modal-body">
+            <!-- Violation Log -->
+            <div class="v-modal-section">
+                <div class="v-modal-section-title">📋 Detection Log</div>
+                <div id="vModalLog"></div>
+            </div>
+            <!-- Snapshots -->
+            <div class="v-modal-section">
+                <div class="v-modal-section-title">📸 Snapshots</div>
+                <div class="v-snap-grid" id="vModalSnaps"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- IMAGE FULLSCREEN MODAL -->
+<div class="img-modal" id="imgModal" onclick="closeImgModal()">
+    <span class="img-modal-close">✕</span>
+    <img id="imgModalSrc" src="">
+    <div class="img-modal-info" id="imgModalInfo"></div>
+</div>
+
+<script>
+    // Clock
+    function updateClock() {
+        const now = new Date();
+        document.getElementById('clock').textContent =
+            now.toLocaleDateString() + '  ' + now.toLocaleTimeString();
+    }
+    setInterval(updateClock, 1000); updateClock();
+
+    // State
+    let uploadedFilename = null;
+    let refreshTimer = null;
+    let allViolations = [];
+    let allSnapshots = [];
+    let activeTab = 'all';
+
+    const META = {
+        'no_helmet':           { icon:'⛑️', label:'No Helmet',           color:'#ff3b3b' },
+        'phone_while_driving': { icon:'📱', label:'Phone While Driving',  color:'#ffd600' },
+        'no_parking':          { icon:'🚫', label:'No Parking',           color:'#4db8ff' },
+        'wrong_way':           { icon:'⬅️', label:'Wrong Way Driving',    color:'#00e676' },
+        'default':             { icon:'⚠️', label:'Violation',            color:'#8899bb' }
+    };
+    function getMeta(type) { return META[type] || META['default']; }
+
+    // Status
+    function setStatus(text, state) {
+        document.getElementById('statusText').textContent = text;
+        document.getElementById('statusDot').className = 'status-dot' + (state ? ' ' + state : '');
+    }
+
+    // Camera
+    function startCamera() {
+        fetch('/start_camera').then(r => r.json()).then(d => {
+            if (d.status === 'started') {
+                showLive();
+                setStatus('Live Camera', 'active');
+                startRefresh();
+            }
+        });
+    }
+
+    // Upload
+    function uploadVideo(input) {
+        const file = input.files[0];
+        if (!file) return;
+        setStatus('Uploading...', 'processing');
+        const fd = new FormData();
+        fd.append('video', file);
+        document.getElementById('progressBar').style.width = '30%';
+        fetch('/upload_video', { method:'POST', body:fd })
+            .then(r => r.json()).then(d => {
+                if (d.status === 'uploaded') {
+                    uploadedFilename = d.filename;
+                    document.getElementById('progressBar').style.width = '100%';
+                    setTimeout(() => document.getElementById('progressBar').style.width = '0%', 800);
+                    const vid = document.getElementById('videoPlayer');
+                    vid.src = '/uploaded_video/' + d.filename;
+                    showVideo();
+                    setStatus('Ready — ' + file.name, '');
+                    document.getElementById('runBtn').disabled = false;
+                }
+            });
+    }
+
+    // Run Detection
+    function runDetection() {
+        if (!uploadedFilename) { alert('Please upload a video first!'); return; }
+        setStatus('Processing...', 'processing');
+        document.getElementById('progressBar').style.width = '5%';
+        document.getElementById('runBtn').disabled = true;
+
+        // Start detection in background (non-blocking)
+        fetch('/run_detection/' + uploadedFilename, {method:'POST'})
+            .then(r => r.json()).then(d => {
+                if (d.status === 'processing') {
+                    startRefresh();
+                    pollProgress();
+                } else {
+                    setStatus('Error: ' + (d.message || 'Failed'), '');
+                    document.getElementById('runBtn').disabled = false;
+                }
+            });
+    }
+
+    function pollProgress() {
+        const bar = document.getElementById('progressBar');
+        const timer = setInterval(() => {
+            fetch('/detection_progress')
+                .then(r => r.json()).then(d => {
+                    if (d.total > 0) {
+                        const pct = Math.min(95, Math.round((d.progress / d.total) * 100));
+                        bar.style.width = pct + '%';
+                    } else {
+                        // Animate smoothly if total unknown
+                        const cur = parseFloat(bar.style.width) || 5;
+                        if (cur < 90) bar.style.width = (cur + 2) + '%';
+                    }
+
+                    if (!d.running && d.progress > 0) {
+                        // Detection finished!
+                        clearInterval(timer);
+                        bar.style.width = '100%';
+                        setStatus('Detection Complete ✅', 'active');
+                        document.getElementById('runBtn').disabled = false;
+
+                        // Load output video
+                        const vid = document.getElementById('videoPlayer');
+                        vid.src = '/output_video?' + Date.now();
+                        showVideo();
+                        refreshData();
+
+                        setTimeout(() => bar.style.width = '0%', 1500);
+                    }
+                });
+        }, 1000); // Poll every second
+    }
+
+    // Stop
+    function stopFeed() {
+        fetch('/stop');
+        document.getElementById('liveStream').src = '';
+        document.getElementById('liveStream').style.display = 'none';
+        document.getElementById('videoOverlay').style.display = 'flex';
+        setStatus('Stopped', '');
+        if (refreshTimer) clearInterval(refreshTimer);
+    }
+
+    // Clear
+    function clearAll() {
+        if (!confirm('Clear all violations and snapshots?')) return;
+        fetch('/clear').then(() => {
+            allViolations = []; allSnapshots = [];
+            resetStats();
+            document.getElementById('logList').innerHTML =
+                '<div class="empty"><div class="empty-icon">✅</div>No violations detected yet</div>';
+            renderSnapshots();
+            setStatus('Cleared', '');
+        });
+    }
+
+    function resetStats() {
+        ['totalCount','helmetCount','phoneCount','parkingCount','wrongCount']
+            .forEach(id => document.getElementById(id).textContent = '0');
+        ['card-helmet','card-phone','card-parking','card-wrong']
+            .forEach(id => document.getElementById(id).classList.remove('alert'));
+        ['helmetTime','phoneTime','parkingTime','wrongTime']
+            .forEach(id => document.getElementById(id).textContent = '—');
+    }
+
+    // Show helpers
+    function showLive() {
+        document.getElementById('videoOverlay').style.display = 'none';
+        document.getElementById('liveStream').src = '/video_feed';
+        document.getElementById('liveStream').style.display = 'block';
+        document.getElementById('videoPlayer').style.display = 'none';
+    }
+    function showVideo() {
+        document.getElementById('videoOverlay').style.display = 'none';
+        document.getElementById('liveStream').style.display = 'none';
+        document.getElementById('videoPlayer').style.display = 'block';
+    }
+
+    // Refresh
+    function startRefresh() {
+        if (refreshTimer) clearInterval(refreshTimer);
+        refreshTimer = setInterval(refreshData, 2500);
+        refreshData();
+    }
+
+    function refreshData() {
+        fetch('/violations').then(r => r.json()).then(data => {
+            data = data.filter(v => v.status !== 'rejected'); allViolations = data;
+            const helmet  = data.filter(v => v.type === 'no_helmet').length;
+            const phone   = data.filter(v => v.type === 'phone_while_driving').length;
+            const parking = data.filter(v => v.type === 'no_parking').length;
+            const wrong   = data.filter(v => v.type === 'wrong_way').length;
+
+            document.getElementById('totalCount').textContent   = data.length;
+            document.getElementById('helmetCount').textContent  = helmet;
+            document.getElementById('phoneCount').textContent   = phone;
+            document.getElementById('parkingCount').textContent = parking;
+            document.getElementById('wrongCount').textContent   = wrong;
+
+            toggleAlert('card-helmet',  helmet  > 0);
+            toggleAlert('card-phone',   phone   > 0);
+            toggleAlert('card-parking', parking > 0);
+            toggleAlert('card-wrong',   wrong   > 0);
+
+            updateLastSeen(data, 'no_helmet',           'helmetTime');
+            updateLastSeen(data, 'phone_while_driving', 'phoneTime');
+            updateLastSeen(data, 'no_parking',          'parkingTime');
+            updateLastSeen(data, 'wrong_way',           'wrongTime');
+
+            // Log
+            const logEl = document.getElementById('logList');
+            if (!data.length) {
+                logEl.innerHTML = '<div class="empty"><div class="empty-icon">✅</div>No violations detected yet</div>';
+            } else {
+                logEl.innerHTML = data.slice().reverse().slice(0,15).map(v => {
+                    const m = getMeta(v.type);
+                    return `<div class="log-item">
+                        <div class="log-icon">${m.icon}</div>
+                        <div class="log-info">
+                            <div class="log-type">${v.type.replace(/_/g,' ')}</div>
+                            <div class="log-meta">
+                                <span class="conf-badge">${(v.confidence*100).toFixed(0)}%</span>
+                                <span>${v.timestamp}</span>
+                            </div>
+                        </div>
+                    </div>`;
+                }).join('');
+            }
+        });
+
+        fetch('/snapshots').then(r => r.json()).then(files => {
+            allSnapshots = files;
+            renderSnapshots();
+        });
+    }
+
+    function toggleAlert(id, on) {
+        document.getElementById(id).classList.toggle('alert', on);
+    }
+
+    function updateLastSeen(data, type, elId) {
+        const m = data.filter(v => v.type === type);
+        if (m.length) document.getElementById(elId).textContent =
+            'Last: ' + m[m.length-1].timestamp.split(' ')[1];
+    }
+
+    // Snapshots
+    function switchTab(type, event) {
+        activeTab = type;
+        document.querySelectorAll('.snap-tab').forEach(t => t.classList.remove('active'));
+        if (event && event.target) event.target.classList.add('active');
+        renderSnapshots();
+    }
+
+    function renderSnapshots() {
+        const grid = document.getElementById('snapGrid');
+        const countEl = document.getElementById('snapCount');
+        let filtered = activeTab === 'all' ? allSnapshots
+            : allSnapshots.filter(f => f.startsWith(activeTab));
+        if (!filtered.length) {
+            grid.innerHTML = `<div class="empty" style="grid-column:1/-1;">
+                <div class="empty-icon">🖼️</div>
+                ${activeTab === 'all' ? 'No snapshots yet' : 'No ' + activeTab.replace(/_/g,' ') + ' snapshots'}
+            </div>`;
+            countEl.textContent = '';
+            return;
+        }
+        countEl.textContent = `Showing ${Math.min(filtered.length,8)} of ${filtered.length}`;
+        grid.innerHTML = filtered.slice().reverse().slice(0,8).map(f => {
+            const typeKey = f.replace('.jpg','').split('_').slice(0,-2).join('_');
+            const m = getMeta(typeKey);
+            return `<div class="snap-item" onclick="openImgModal('/snapshot/${f}','${m.label}')">
+                <img src="/snapshot/${f}" loading="lazy">
+                <div class="snap-label">${m.icon} ${m.label}</div>
+                <div class="snap-badge">!</div>
+            </div>`;
+        }).join('');
+    }
+
+    // ── VIOLATION DETAIL MODAL ──
+    function openViolationModal(type) {
+        const m = getMeta(type);
+        const filtered = allViolations.filter(v => v.type === type);
+        const snaps = allSnapshots.filter(f => f.startsWith(type));
+
+        document.getElementById('vModalIcon').textContent = m.icon;
+        document.getElementById('vModalName').textContent = m.label;
+        document.getElementById('vModalSub').textContent  =
+            filtered.length ? `${filtered.length} violation${filtered.length>1?'s':''} detected` : 'No violations detected yet';
+        document.getElementById('vModalTotal').textContent = filtered.length;
+        document.getElementById('vModalSnapCount').textContent = snaps.length;
+
+        // Avg confidence
+        if (filtered.length) {
+            const avg = filtered.reduce((s,v) => s + v.confidence, 0) / filtered.length;
+            document.getElementById('vModalAvgConf').textContent = (avg*100).toFixed(0) + '%';
+        } else {
+            document.getElementById('vModalAvgConf').textContent = '—';
+        }
+
+        // Log
+        const logEl = document.getElementById('vModalLog');
+        if (!filtered.length) {
+            logEl.innerHTML = '<div class="empty"><div class="empty-icon">' + m.icon + '</div>No ' + m.label + ' violations yet.<br><span style="font-size:11px;">Run detection on a traffic video.</span></div>';
+        } else {
+            logEl.innerHTML = filtered.slice().reverse().map((v,i) => `
+                <div class="v-log-item">
+                    <div style="font-size:11px;font-weight:700;color:var(--text-primary);">#${filtered.length - i} — ${v.type.replace(/_/g,' ').toUpperCase()}</div>
+                    <div class="v-log-time">🕐 ${v.timestamp}</div>
+                    <div class="v-log-conf">
+                        <div class="v-log-bar"><div class="v-log-bar-fill" style="width:${(v.confidence*100).toFixed(0)}%"></div></div>
+                        <span class="v-log-pct">${(v.confidence*100).toFixed(0)}%</span>
+                    </div>
+                </div>`).join('');
+        }
+
+        // Snaps
+        const snapsEl = document.getElementById('vModalSnaps');
+        if (!snaps.length) {
+            snapsEl.innerHTML = '<div class="empty"><div class="empty-icon">🖼️</div>No snapshots for this category.</div>';
+        } else {
+            snapsEl.innerHTML = snaps.slice().reverse().slice(0,8).map(f => {
+                const ts = f.replace('.jpg','').split('_').slice(-2).join('_');
+                return `<div class="v-snap-item" onclick="openImgModal('/snapshot/${f}','${m.label}')">
+                    <img src="/snapshot/${f}" loading="lazy">
+                    <div class="v-snap-time">${ts}</div>
+                </div>`;
+            }).join('');
+        }
+
+        document.getElementById('vModalOverlay').classList.add('show');
+    }
+
+    function closeViolationModal(event) {
+        if (!event || event.target === document.getElementById('vModalOverlay')) {
+            document.getElementById('vModalOverlay').classList.remove('show');
+        }
+    }
+
+    // Image fullscreen
+    function openImgModal(src, label) {
+        document.getElementById('imgModalSrc').src = src;
+        document.getElementById('imgModalInfo').textContent = label.toUpperCase();
+        document.getElementById('imgModal').classList.add('show');
+    }
+    function closeImgModal() {
+        document.getElementById('imgModal').classList.remove('show');
+    }
+
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') {
+            closeImgModal();
+            closeViolationModal();
+        }
+    });
+</script>
+</body>
+</html>

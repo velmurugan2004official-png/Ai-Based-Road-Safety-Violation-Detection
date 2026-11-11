@@ -1,0 +1,136 @@
+import cv2
+from ultralytics import YOLO
+from config import Config
+import datetime
+import os
+
+SNAPSHOT_DIR = os.path.abspath(Config.VIOLATION_SAVE_PATH)
+
+class ViolationDetector:
+    def __init__(self):
+        self.model = YOLO(Config.MODEL_PATH)
+        self.confidence = Config.CONFIDENCE_THRESHOLD
+        self.violation_classes = {
+            0: "person", 1: "bicycle", 2: "car",
+            3: "motorcycle", 5: "bus", 7: "truck", 67: "cell phone"
+        }
+        self.prev_positions = {}
+        self.parked_vehicles = {}
+        os.makedirs(SNAPSHOT_DIR, exist_ok=True)
+        print("✅ Detector initialized!")
+
+    def detect_vehicles(self, frame):
+        results = self.model(frame, conf=self.confidence, verbose=False)
+        detections = []
+        for result in results:
+            for box in result.boxes:
+                cls = int(box.cls[0])
+                conf = float(box.conf[0])
+                x1, y1, x2, y2 = map(int, box.xyxy[0])
+                if cls in self.violation_classes:
+                    detections.append({
+                        "class": self.violation_classes[cls],
+                        "confidence": round(conf, 2),
+                        "bbox": (x1, y1, x2, y2)
+                    })
+        return detections
+
+    def draw_detections(self, frame, detections):
+        for det in detections:
+            x1, y1, x2, y2 = det["bbox"]
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 200, 100), 2)
+            cv2.putText(frame, f'{det["class"]} {det["confidence"]}',
+                        (x1, y1-8), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 200, 100), 1)
+        return frame
+
+    def save_violation_snapshot(self, frame, violation_type):
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S%f")
+        filename = f"{violation_type}_{timestamp}.jpg"
+        cv2.imwrite(os.path.join(SNAPSHOT_DIR, filename), frame)
+        return filename
+
+    def check_no_helmet(self, detections):
+        violations = []
+        motorcycles = [d for d in detections if d["class"] == "motorcycle"]
+        persons = [d for d in detections if d["class"] == "person"]
+        for moto in motorcycles:
+            mx1, my1, mx2, my2 = moto["bbox"]
+            for p in persons:
+                px1, py1, px2, py2 = p["bbox"]
+                if px1 < mx2 and px2 > mx1 and py2 > my1:
+                    violations.append({
+                        "type": "no_helmet",
+                        "bbox": p["bbox"],
+                        "confidence": p["confidence"]
+                    })
+        if not motorcycles and persons:
+            violations.append({
+                "type": "no_helmet",
+                "bbox": persons[0]["bbox"],
+                "confidence": persons[0]["confidence"]
+            })
+        return violations
+
+    def check_phone_use(self, detections):
+        violations = []
+        phones = [d for d in detections if d["class"] == "cell phone"]
+        persons = [d for d in detections if d["class"] == "person"]
+        for phone in phones:
+            px1, py1, px2, py2 = phone["bbox"]
+            for p in persons:
+                bx1, by1, bx2, by2 = p["bbox"]
+                if px1 < bx2 and px2 > bx1 and py1 < by2 and py2 > by1:
+                    violations.append({
+                        "type": "phone_while_driving",
+                        "bbox": p["bbox"],
+                        "confidence": phone["confidence"]
+                    })
+        return violations
+
+    def check_wrong_way(self, detections):
+        violations = []
+        for det in detections:
+            if det["class"] in ["car", "motorcycle", "truck", "bus"]:
+                x1, y1, x2, y2 = det["bbox"]
+                if x1 < 40:
+                    violations.append({
+                        "type": "wrong_way",
+                        "bbox": det["bbox"],
+                        "confidence": det["confidence"]
+                    })
+        return violations
+
+    def check_no_parking(self, detections, frame_id):
+        violations = []
+        for det in detections:
+            if det["class"] in ["car", "truck", "bus"]:
+                cx = (det["bbox"][0] + det["bbox"][2]) // 2
+                cy = (det["bbox"][1] + det["bbox"][3]) // 2
+                key = f'{det["class"]}_{cx//50}'
+                if key in self.parked_vehicles:
+                    prev_id, prev_cx, prev_cy = self.parked_vehicles[key]
+                    dist = ((cx-prev_cx)**2 + (cy-prev_cy)**2)**0.5
+                    if dist < 15 and (frame_id - prev_id) > 40:
+                        violations.append({
+                            "type": "no_parking",
+                            "bbox": det["bbox"],
+                            "confidence": det["confidence"]
+                        })
+                self.parked_vehicles[key] = (frame_id, cx, cy)
+        return violations
+
+    def process_frame(self, frame, frame_id=0):
+        detections = self.detect_vehicles(frame)
+        violations = []
+        violations.extend(self.check_no_helmet(detections))
+        violations.extend(self.check_phone_use(detections))
+        violations.extend(self.check_wrong_way(detections))
+        violations.extend(self.check_no_parking(detections, frame_id))
+        frame = self.draw_detections(frame, detections)
+        for v in violations:
+            x1, y1, x2, y2 = v["bbox"]
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 3)
+            cv2.putText(frame, f'VIOLATION: {v["type"].upper()}',
+                        (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX,
+                        0.6, (0, 0, 255), 2)
+        return frame, detections, violations

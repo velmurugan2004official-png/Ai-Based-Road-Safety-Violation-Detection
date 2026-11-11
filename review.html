@@ -1,0 +1,117 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Violations Review</title>
+<style>
+:root{--bg:#0a0e1a;--cd:#141d35;--bd:#1e3060;--ac:#1e90ff;--tx:#e8f0fe;--mu:#8899bb;--rd:#ff3b3b;--gn:#00e676;--yl:#ffd600}
+*{box-sizing:border-box}body{margin:0;font:14px 'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--tx)}
+.ban{background:var(--ac);text-align:center;font-size:12px;padding:5px}
+.top{display:flex;justify-content:space-between;align-items:center;padding:12px 24px;border-bottom:2px solid var(--ac)}
+a{color:#4db8ff;text-decoration:none}.w{padding:20px 24px;max-width:1300px;margin:auto}
+.kpi,.bar{display:grid;gap:12px;margin-bottom:16px}.kpi{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
+.k,.c{background:var(--cd);border:1px solid var(--bd);border-radius:12px}.k{padding:12px;color:var(--mu);font-size:12px}.k b{display:block;font-size:26px;color:var(--tx);margin-top:4px}
+.bar{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+select,input,button{background:var(--cd);color:var(--tx);border:1px solid var(--bd);border-radius:8px;padding:8px 12px;font:inherit}
+button{cursor:pointer}.ok{border-color:var(--gn);color:var(--gn)}.no{border-color:var(--rd);color:var(--rd)}
+.g{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.c{overflow:hidden}.c img{width:100%;aspect-ratio:16/9;object-fit:cover;background:#000;display:block}
+.b{padding:12px;display:flex;flex-direction:column;gap:6px}.r{display:flex;gap:8px}.r>*{flex:1}
+.chip{font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;border:1px solid;align-self:flex-start}
+.pending{color:var(--yl)}.confirmed{color:var(--gn)}.rejected{color:var(--rd)}.m{color:var(--mu);font-size:12px}
+</style></head><body>
+<div class="ban">⚠ AI-assisted detection. A human must verify every violation before any penalty is issued.</div>
+<div class="top"><b>🚦 Violations Review Queue</b><span><a href="/">← Live Detection</a> &nbsp; <a href="/export/csv">⬇ Export CSV</a></span></div>
+<div class="w"><div class="kpi" id="kpi"></div>
+<div class="bar"><input id="q" placeholder="Search type / date…" oninput="load()">
+<select id="st" onchange="load()"><option value="">All statuses</option><option value="pending">Pending</option><option value="confirmed">Confirmed</option><option value="rejected">Rejected</option></select>
+<select id="ty" onchange="load()"><option value="">All types</option><option value="no_helmet">No Helmet</option><option value="phone_while_driving">Phone</option><option value="no_parking">No Parking</option><option value="wrong_way">Wrong Way</option></select></div>
+<div class="g" id="g"></div></div>
+<script>
+const $=id=>document.getElementById(id);
+let activeFilter='';
+
+function setFilter(val){
+ activeFilter=activeFilter===val?'':val;
+ $('st').value=activeFilter;
+ load();
+}
+
+async function load(){
+ const s=await (await fetch('/api/stats')).json();
+
+ // Clickable KPI cards
+ const cards=[
+  {label:'Total',val:s.total,filter:'',icon:'📊',color:'var(--ac)'},
+  {label:'Pending Review',val:s.pending,filter:'pending',icon:'⏳',color:'var(--yl)'},
+  {label:'Confirmed',val:s.confirmed,filter:'confirmed',icon:'✅',color:'var(--gn)'},
+  {label:'Rejected',val:s.rejected,filter:'rejected',icon:'❌',color:'var(--rd)'},
+  {label:'Confirmed Fines',val:'₹'+s.fine.toLocaleString("en-IN"),filter:'fines',icon:'💰',color:'#00e5cc'},
+ ];
+
+ $('kpi').innerHTML=cards.map(k=>{
+  const isActive=activeFilter===k.filter && k.filter!=='fines';
+  return `<div class="k" onclick="${k.filter!=='fines'?`setFilter('${k.filter}')`:'showFineModal('+s.fine+')'}"
+   style="cursor:pointer;border:2px solid ${isActive?k.color:'var(--bd)'};
+   background:${isActive?'rgba(30,144,255,0.1)':'var(--cd)'};
+   transform:${isActive?'scale(1.03)':'scale(1)'};transition:all 0.2s;
+   box-shadow:${isActive?`0 0 12px ${k.color}40`:''}"
+   title="${k.filter==='fines'?'Click to manage fines':'Click to filter by '+k.label}">
+   <span style="font-size:18px">${k.icon}</span>
+   <span style="color:var(--mu);font-size:11px;text-transform:uppercase;letter-spacing:1px">${k.label}</span>
+   <b style="font-size:28px;color:${k.color}">${k.val}</b>
+   ${k.filter!=='fines'?`<span style="font-size:10px;color:var(--mu)">${isActive?'▶ Filtering...':'Click to filter'}</span>`
+   :'<span style="font-size:10px;color:var(--mu)">Click to manage</span>'}
+  </div>`;
+ }).join('');
+
+ const p=new URLSearchParams({status:$('st').value,type:$('ty').value,q:$('q').value});
+ const d=await (await fetch('/api/cases?'+p)).json();
+
+ $('g').innerHTML=d.length?d.map(v=>`<div class="c">${v.snapshot_file?`<img src="/snapshot/${v.snapshot_file}">`:''}<div class="b">
+ <div><b>#${v.id} ${v.label}</b></div><span class="chip ${v.status}">${v.status.toUpperCase()}</span>
+ <div class="m">${v.timestamp} · ${(v.confidence*100).toFixed(0)}% (${v.tier==='high'?'high confidence':'needs review'})</div>
+ <div class="m">${v.section} · Fine ₹${v.fine}</div>
+ ${[].concat(v.trace||[]).map(t=>`<div class="m">${typeof t==="string"?t:t.check+": "+(t.result?"✅":"❌")}</div>`).join("")}
+ ${v.note?`<div class="m">📝 ${v.note}</div>`:""}
+ <div class="r">
+  <button class="ok" onclick="rv(${v.id},'confirmed')">✅ Confirm</button>
+  <button class="no" onclick="rv(${v.id},'rejected')">❌ Reject</button>
+ </div>
+ <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px">
+  ${v.status==="confirmed"?`<a href="/challan/${v.id}" target="_blank" style="color:#00e5cc">🧾 Open challan</a>`:""}
+  <button style="font-size:11px;padding:3px 8px;border-color:#555;color:var(--mu)" onclick="editFine(${v.id},${v.fine||0})">
+   💰 Set Fine
+  </button>
+ </div>
+ </div></div>`).join(""):"<div class='m' style='padding:40px;text-align:center'>No violations match the current filter.</div>";
+}
+
+async function rv(id,status){
+ const note=status==="rejected"?(prompt("Reason for rejection (optional):")||""):"";
+ await fetch("/api/review/"+id,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({status,note})});
+ load();
+}
+
+// ── Fine Management ──
+async function editFine(id, currentFine){
+ const val = prompt(`Set fine amount for violation #${id}:\nCurrent fine: ₹${currentFine}\n(Enter 0 to clear)`, currentFine);
+ if(val===null) return; // cancelled
+ const fine = parseInt(val)||0;
+ if(fine<0){ alert("Fine cannot be negative"); return; }
+
+ const res = await fetch("/api/set_fine/"+id, {
+  method:"POST",
+  headers:{"Content-Type":"application/json"},
+  body:JSON.stringify({fine})
+ });
+ const data = await res.json();
+ if(data.error){ alert("Error: "+data.error); return; }
+ load();
+}
+
+function showFineModal(total){
+ const msg = total===0
+  ? "No confirmed fines yet.\n\nFines are set per violation using the 'Set Fine' button on each card."
+  : `Total confirmed fines: ₹${total.toLocaleString("en-IN")}\n\nTo clear a fine, click 'Set Fine' on a violation card and enter 0.`;
+ alert(msg);
+}
+
+load();setInterval(load,5000);
+</script></body></html>
